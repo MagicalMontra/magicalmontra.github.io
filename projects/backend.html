@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Multiplayer Backend · Setthakritti Duangjamsai</title>
-  <meta name="description" content="ASP.NET Core backend case study using PostgreSQL, Redis, JWT, Docker and Testcontainers.">
+  <meta name="description" content="ASP.NET Core multiplayer backend case study covering PostgreSQL, Redis, JWT authentication, optimistic concurrency, Docker and Testcontainers.">
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
@@ -20,78 +20,384 @@
     </nav>
   </div>
 </header>
+
 <main>
   <section class="detail-hero">
     <div class="container">
       <p class="eyebrow">Independent engineering project</p>
       <h1>Multiplayer Backend</h1>
       <p class="lead">
-        An ASP.NET Core backend project used to deepen my production-oriented backend skills beyond real-time game-server code.
+        An ASP.NET Core backend built to exercise the parts of backend engineering that matter beyond CRUD:
+        authenticated ownership, relational persistence, optimistic concurrency, distributed cache and queue state,
+        dependency health, containerized infrastructure and integration testing against real PostgreSQL and Redis instances.
       </p>
+      <div class="actions">
+        <a class="button" href="https://github.com/MagicalMontra/MultiplayerBackend" target="_blank" rel="noopener">View source on GitHub</a>
+        <a class="button secondary" href="https://github.com/MagicalMontra/MultiplayerBackend#readme" target="_blank" rel="noopener">Repository README</a>
+      </div>
     </div>
   </section>
 
   <section class="section">
     <div class="container content-grid">
       <article class="prose">
-        <h2>What it demonstrates</h2>
+        <h2>System architecture</h2>
         <p>
-          The project focuses on practical backend concerns rather than a minimal CRUD API:
-          persistence, authentication, shared queue state, infrastructure health and integration tests against real services.
+          The backend is deliberately small enough to understand as one system, but it crosses the boundaries that make
+          backend work interesting: HTTP/API behavior, identity, persistence, concurrent writes, distributed state,
+          infrastructure dependencies and end-to-end tests.
         </p>
 
-        <div class="architecture">Client
-  │
-  ▼
-ASP.NET Core API
-  │
-  ├── Authentication / JWT
-  │
-  ├── Application services
-  │
-  ├── EF Core ─────────────► PostgreSQL
-  │
-  └── Redis client ────────► Redis
-                               │
-                               └── Lua queue operations</div>
+        <div class="architecture">Authenticated client
+        │
+        ▼
+ASP.NET Core Minimal API
+        │
+        ├── JWT authentication / claims
+        │
+        ├── Player endpoints
+        │       ├── EF Core ─────────────► PostgreSQL
+        │       └── distributed cache ───► Redis
+        │
+        ├── Inventory endpoints
+        │       └── EF Core ─────────────► PostgreSQL
+        │                                  └── optimistic concurrency
+        │
+        ├── Login queue
+        │       └── StackExchange.Redis ─► Redis sorted set
+        │                                  └── Lua atomic join
+        │
+        └── Health checks
+                ├── /health/live
+                └── /health/ready ───────► PostgreSQL + Redis</div>
 
-        <h2>Redis-backed login queue</h2>
-        <p>
-          Queue state is stored in Redis instead of process memory so it can be shared by more than one backend instance.
-          Lua is used for multi-step queue operations that need to execute atomically inside Redis.
-        </p>
-
-        <h2>Persistence and authentication</h2>
-        <p>
-          PostgreSQL and Entity Framework Core provide relational persistence. JWT authentication keeps API identity handling
-          explicit and gives the project a realistic request/authentication path to test.
-        </p>
-
-        <h2>Integration testing</h2>
-        <p>
-          Testcontainers is used so integration tests exercise real infrastructure in disposable containers rather than relying
-          entirely on mocked persistence. This makes failures around configuration, serialization and database behavior visible.
-        </p>
+        <h2>What is actually implemented</h2>
+        <ul>
+          <li>Account registration and login with password hashing and JWT bearer authentication.</li>
+          <li>Authenticated <code>/me</code> endpoints that derive player identity from token claims.</li>
+          <li>PostgreSQL persistence through Entity Framework Core.</li>
+          <li>Redis cache-aside reads for player state with a bounded TTL.</li>
+          <li>A Redis sorted-set login queue with an atomic Lua join operation.</li>
+          <li>Inventory stacking and player-to-player transfers.</li>
+          <li>Optimistic inventory concurrency using an EF row-version property backed by PostgreSQL.</li>
+          <li>Separate liveness and dependency-readiness health checks.</li>
+          <li>Docker Compose development infrastructure.</li>
+          <li>Integration tests using WebApplicationFactory and disposable PostgreSQL/Redis Testcontainers.</li>
+        </ul>
 
         <div class="callout">
-          <strong>Current portfolio goal:</strong> demonstrate that my C# experience extends beyond Unity application code
-          into ordinary backend architecture, persistence, authentication and infrastructure.
+          <strong>The important part of this case study is not the technology list.</strong>
+          The sections below link each claim to the actual implementation and show the behavior being tested.
+        </div>
+
+        <h2>Deep dive: atomic Redis login queue</h2>
+        <h3>The problem</h3>
+        <p>
+          Queue state cannot live only inside one API process if multiple backend instances need to observe the same queue.
+          Redis provides shared state, but a join operation itself still contains several dependent steps.
+        </p>
+
+        <div class="architecture">Join(account)
+    │
+    ├── Is this account already queued?
+    │
+    ├── Allocate the next sequence number
+    │
+    ├── Add account to the sorted set
+    │
+    └── Return its current rank
+
+If these are separate round trips, concurrent joins can interleave between steps.</div>
+
+        <h3>The implementation</h3>
+        <p>
+          The queue uses a Redis sorted set. A monotonically increasing sequence becomes the score, which preserves join order.
+          The check, sequence allocation, insertion and rank calculation run inside one Lua script so the operation is atomic
+          from Redis' point of view.
+        </p>
+
+        <div class="architecture">local rank = redis.call('ZRANK', KEYS[1], ARGV[1])
+
+if rank then
+    return rank + 1
+end
+
+local sequence = redis.call('INCR', KEYS[2])
+redis.call('ZADD', KEYS[1], sequence, ARGV[1])
+
+rank = redis.call('ZRANK', KEYS[1], ARGV[1])
+return rank + 1</div>
+
+        <p>
+          <a href="https://github.com/MagicalMontra/MultiplayerBackend/blob/main/MultiplayerBackend.Api/Services/LoginQueueService.cs" target="_blank" rel="noopener"><strong>View the actual LoginQueueService implementation →</strong></a>
+        </p>
+
+        <h3>The behavior is tested concurrently</h3>
+        <p>
+          The integration test does not merely call the endpoint once. It authenticates a real test account and submits
+          <strong>20 concurrent join requests for the same account</strong>. Every response must report position 1, and the
+          final queue must still contain exactly one member.
+        </p>
+
+        <div class="architecture">var tasks = Enumerable.Range(0, 20)
+    .Select(_ => client.PostAsync(
+        "/api/login-queue/join",
+        null))
+    .ToArray();
+
+var responses = await Task.WhenAll(tasks);
+
+// each response reports position 1
+// final queue count == 1</div>
+
+        <p>
+          <a href="https://github.com/MagicalMontra/MultiplayerBackend/blob/main/MultiplayerBackend.Api.Tests/LoginQueueTests.cs" target="_blank" rel="noopener"><strong>View the concurrent login-queue integration test →</strong></a>
+        </p>
+
+        <h2>Deep dive: inventory writes and optimistic concurrency</h2>
+        <h3>The problem</h3>
+        <p>
+          A transfer is not just “subtract here, add there.” The source quantity can become stale if another request modifies
+          the same inventory row after it was read but before the write is committed.
+        </p>
+
+        <div class="architecture">Initial state: 10 Health Potions
+
+Request A reads 10 ──► transfer 8
+Request B reads 10 ──► transfer 6
+
+Without concurrency detection, a stale write can overwrite newer state.
+
+With optimistic concurrency:
+    one write commits
+    stale writer detects a version mismatch
+    API can return 409 Conflict instead of silently overwriting state</div>
+
+        <h3>Database concurrency token</h3>
+        <p>
+          <code>InventoryItem.Version</code> is configured as an EF row-version property. The transfer service catches
+          <code>DbUpdateConcurrencyException</code> and returns a domain-level concurrency result, which the HTTP endpoint maps
+          to <code>409 Conflict</code>.
+        </p>
+
+        <div class="architecture">modelBuilder.Entity&lt;InventoryItem&gt;()
+    .Property(item => item.Version)
+    .IsRowVersion();
+
+...
+
+try
+{
+    await _db.SaveChangesAsync();
+}
+catch (DbUpdateConcurrencyException)
+{
+    return TransferItemResult.ConcurrencyConflict;
+}</div>
+
+        <p>
+          <a href="https://github.com/MagicalMontra/MultiplayerBackend/blob/main/MultiplayerBackend.Api/Data/AppDbContext.cs" target="_blank" rel="noopener"><strong>View EF Core concurrency configuration →</strong></a><br>
+          <a href="https://github.com/MagicalMontra/MultiplayerBackend/blob/main/MultiplayerBackend.Api/Services/InventoryService.cs" target="_blank" rel="noopener"><strong>View inventory transfer implementation →</strong></a><br>
+          <a href="https://github.com/MagicalMontra/MultiplayerBackend/blob/main/MultiplayerBackend.Api/Endpoints/InventoryEndpoints.cs" target="_blank" rel="noopener"><strong>View HTTP result mapping →</strong></a>
+        </p>
+
+        <h3>Transfer behavior is integration tested</h3>
+        <p>
+          The transfer test creates two accounts, authenticates as the source player, adds 10 health potions, transfers 3,
+          verifies the source now owns 7, authenticates as the target player, and verifies the target owns 3. A separate test
+          verifies that inventory access without a JWT is rejected.
+        </p>
+
+        <p>
+          <a href="https://github.com/MagicalMontra/MultiplayerBackend/blob/main/MultiplayerBackend.Api.Tests/InventoryTransferTests.cs" target="_blank" rel="noopener"><strong>View inventory integration tests →</strong></a>
+        </p>
+
+        <h2>Authentication and player ownership</h2>
+        <p>
+          Player-facing routes do not ask the client to supply an arbitrary player ID and then trust it. Authenticated routes
+          derive account/player identity from JWT claims and operate on the authenticated player's resources.
+        </p>
+
+        <div class="architecture">POST /api/auth/login
+        │
+        ▼
+JWT access token
+        │
+        ▼
+Authorization: Bearer &lt;token&gt;
+        │
+        ├── GET /api/players/me
+        ├── PUT /api/players/me
+        ├── /api/players/me/inventory/...
+        └── /api/login-queue/...</div>
+
+        <p>
+          <a href="https://github.com/MagicalMontra/MultiplayerBackend/blob/main/MultiplayerBackend.Api/Endpoints/AuthEndpoints.cs" target="_blank" rel="noopener"><strong>View authentication endpoints →</strong></a><br>
+          <a href="https://github.com/MagicalMontra/MultiplayerBackend/blob/main/MultiplayerBackend.Api/Services/TokenService.cs" target="_blank" rel="noopener"><strong>View JWT creation →</strong></a><br>
+          <a href="https://github.com/MagicalMontra/MultiplayerBackend/blob/main/MultiplayerBackend.Api/Program.cs" target="_blank" rel="noopener"><strong>View JWT validation and DI configuration →</strong></a>
+        </p>
+
+        <h2>Redis cache-aside player reads</h2>
+        <p>
+          <code>GET /api/players/me</code> checks the distributed Redis cache first. A cache miss falls through to a projected
+          PostgreSQL query, then stores the serialized response in Redis for five minutes before returning it.
+        </p>
+
+        <div class="architecture">GET /api/players/me
+        │
+        ▼
+Redis lookup
+   │          │
+   │ hit      │ miss
+   ▼          ▼
+return     PostgreSQL
+              │
+              ▼
+          PlayerResponse
+              │
+              ▼
+        cache for 5 min
+              │
+              ▼
+            return</div>
+
+        <p>
+          <a href="https://github.com/MagicalMontra/MultiplayerBackend/blob/main/MultiplayerBackend.Api/Endpoints/PlayerEndpoints.cs" target="_blank" rel="noopener"><strong>View cache-aside implementation →</strong></a>
+        </p>
+
+        <h2>Integration tests use real infrastructure</h2>
+        <p>
+          The test suite does not replace PostgreSQL and Redis with in-memory substitutes. The shared fixture creates disposable
+          PostgreSQL and Redis containers, injects their connection strings into the application, applies the same EF migrations,
+          and runs requests through <code>WebApplicationFactory&lt;Program&gt;</code>.
+        </p>
+
+        <div class="architecture">xUnit
+  │
+  ▼
+ApiIntegrationTestFixture
+  │
+  ├── start PostgreSQL Testcontainer ─┐
+  ├── start Redis Testcontainer ──────┤ concurrently
+  │                                   │
+  └───────────────────────────────────┘
+  │
+  ▼
+WebApplicationFactory&lt;Program&gt;
+  │
+  ├── replace AppDbContext connection
+  ├── replace distributed Redis cache
+  ├── replace IConnectionMultiplexer
+  └── apply EF Core migrations
+  │
+  ▼
+real HTTP integration tests
+  │
+  ▼
+reset between tests
+  ├── TRUNCATE PostgreSQL tables
+  └── FLUSHDB Redis</div>
+
+        <div class="architecture">await Task.WhenAll(
+    _postgres.StartAsync(),
+    _redis.StartAsync()
+);
+
+...
+
+await db.Database.MigrateAsync();</div>
+
+        <p>
+          <a href="https://github.com/MagicalMontra/MultiplayerBackend/blob/main/MultiplayerBackend.Api.Tests/Infrastructure/ApiIntegrationTestFixture.cs" target="_blank" rel="noopener"><strong>View the Testcontainers/WebApplicationFactory fixture →</strong></a>
+        </p>
+
+        <h2>Operational behavior</h2>
+        <p>
+          Liveness and readiness are intentionally different. Liveness only answers whether the application process can serve a
+          request. Readiness includes PostgreSQL and Redis checks, so an orchestrator can keep an unhealthy instance out of
+          service without treating every dependency interruption as a dead process.
+        </p>
+
+        <div class="architecture">GET /health/live
+    └── process is responding
+
+GET /health/ready
+    ├── PostgreSQL ready?
+    └── Redis ready?</div>
+
+        <p>
+          <a href="https://github.com/MagicalMontra/MultiplayerBackend/blob/main/MultiplayerBackend.Api/Program.cs" target="_blank" rel="noopener"><strong>View health-check registration and endpoints →</strong></a>
+        </p>
+
+        <h2>API surface</h2>
+        <div class="architecture">Public
+POST   /api/auth/register
+POST   /api/auth/login
+GET    /health/live
+GET    /health/ready
+
+JWT authenticated
+GET    /api/players/me
+PUT    /api/players/me
+GET    /api/players/me/inventory
+POST   /api/players/me/inventory
+POST   /api/players/me/inventory/{itemId}/transfer
+POST   /api/login-queue/join
+GET    /api/login-queue/status
+DELETE /api/login-queue/leave</div>
+
+        <h2>Run it locally</h2>
+        <p>
+          The development stack is reproducible with Docker Compose. Secrets are supplied through a local <code>.env</code>
+          file rather than committed configuration.
+        </p>
+
+        <div class="architecture"># .env
+POSTGRES_PASSWORD=devpassword
+JWT_SIGNING_KEY=&lt;base64-key&gt;
+
+# start API + PostgreSQL + Redis
+docker compose up --build
+
+# verify health
+curl http://localhost:5035/health/live
+curl http://localhost:5035/health/ready
+
+# run integration tests
+dotnet test MultiplayerBackend.Api.Tests/MultiplayerBackend.Api.Tests.csproj</div>
+
+        <h2>Scope and limitations</h2>
+        <p>
+          This is an independent engineering project, not a production service with real users or production traffic. The point
+          is to make backend mechanisms concrete and inspectable: authentication, ownership, persistence, distributed state,
+          concurrency handling, infrastructure health and integration testing. The public repository contains the implementation
+          so those claims can be verified directly rather than taken from a portfolio description.
+        </p>
+
+        <div class="actions">
+          <a class="button" href="https://github.com/MagicalMontra/MultiplayerBackend" target="_blank" rel="noopener">Inspect the repository</a>
+          <a class="button secondary" href="https://github.com/MagicalMontra/MultiplayerBackend/tree/main/MultiplayerBackend.Api.Tests" target="_blank" rel="noopener">Inspect the tests</a>
         </div>
       </article>
 
       <aside class="sidebar">
         <dl>
+          <dt>Project</dt><dd>Independent backend engineering</dd>
           <dt>Language</dt><dd>C#</dd>
-          <dt>Backend</dt><dd>ASP.NET Core</dd>
+          <dt>Runtime</dt><dd>.NET 10</dd>
+          <dt>Backend</dt><dd>ASP.NET Core Minimal APIs</dd>
           <dt>Persistence</dt><dd>EF Core · PostgreSQL</dd>
-          <dt>Shared state</dt><dd>Redis · Lua</dd>
-          <dt>Testing</dt><dd>Testcontainers</dd>
-          <dt>Infrastructure</dt><dd>Docker Compose · health checks</dd>
+          <dt>Distributed state</dt><dd>Redis · Lua</dd>
+          <dt>Authentication</dt><dd>JWT bearer</dd>
+          <dt>Testing</dt><dd>xUnit · WebApplicationFactory · Testcontainers</dd>
+          <dt>Infrastructure</dt><dd>Docker · Docker Compose · health checks</dd>
+          <dt>Source</dt><dd><a href="https://github.com/MagicalMontra/MultiplayerBackend" target="_blank" rel="noopener">GitHub repository →</a></dd>
         </dl>
       </aside>
     </div>
   </section>
 </main>
+
 <footer class="footer">
   <div class="container footer-row">
     <span>Setthakritti Duangjamsai · Bangkok, Thailand</span>
