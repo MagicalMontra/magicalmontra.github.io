@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Playbux Multiplayer Systems · Setthakritti Duangjamsai</title>
-  <meta name="description" content="Professional server-authoritative multiplayer engineering work: AOI, prediction/reconciliation, combat and shared world state.">
+  <meta name="description" content="Professional server-authoritative multiplayer engineering case study covering custom grid AOI, prediction/reconciliation, combat, spawning, shared world state and UDP transport work.">
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
@@ -20,78 +20,314 @@
     </nav>
   </div>
 </header>
+
 <main>
   <section class="detail-hero">
     <div class="container">
       <p class="eyebrow">Professional multiplayer work</p>
       <h1>Playbux Multiplayer Systems</h1>
       <p class="lead">
-        Server-authoritative multiplayer engineering for an MMO-oriented Unity project using C#, Mirror
-        and a heavily modified UDP transport layer.
+        Server-authoritative multiplayer engineering for an MMO-oriented Unity project. My work included a custom grid-based
+        Area of Interest system integrated with Mirror, client prediction/server reconciliation, combat and spawning systems,
+        shared world state, and work on the project's UDP transport layer.
       </p>
+      <div class="actions">
+        <a class="button" href="https://youtu.be/JsZCxpHsoSs" target="_blank" rel="noopener">Watch project footage</a>
+      </div>
     </div>
   </section>
 
   <section class="section">
     <div class="container content-grid">
       <article class="prose">
-        <h2>Role</h2>
+        <h2>Project footage</h2>
         <p>
-          As a Senior Software Engineer, I owned implementation work across server-authoritative gameplay systems
-          and multiplayer state management.
+          This is the public project artifact I still have from this work. The video provides visual context for the running
+          multiplayer project. It should not be treated as direct proof of server-side implementation details that are not
+          visible on screen.
         </p>
 
-        <h2>Area of Interest</h2>
-        <p>
-          I designed and implemented a custom grid-based Area of Interest system integrated with Mirror.
-          The server spatially partitioned the world, determined player visibility and selectively synchronized
-          only the relevant network state to each client.
-        </p>
+        <div style="position:relative;width:100%;aspect-ratio:16/9;margin:24px 0;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#11181d;">
+          <iframe
+            src="https://www.youtube-nocookie.com/embed/JsZCxpHsoSs"
+            title="Playbux multiplayer project footage"
+            loading="lazy"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            allowfullscreen
+            style="position:absolute;inset:0;width:100%;height:100%;border:0;">
+          </iframe>
+        </div>
 
-        <div class="architecture">World state
-   │
-   ▼
-Spatial grid
-   │
-   ▼
-Nearby / relevant entities
-   │
-   ▼
-Per-client visibility
-   │
-   ▼
-Selective network replication</div>
-
-        <h2>Authoritative movement</h2>
         <p>
-          Player movement remained server-authoritative while the client predicted local movement for responsiveness.
-          Authoritative server state was used for reconciliation and correction.
-        </p>
-
-        <h2>Other server-side systems</h2>
-        <p>
-          The multiplayer work also included player spawning, combat and shared world-state systems.
-          The implementation sat on top of Mirror and a substantially modified UDP transport layer.
+          <a href="https://youtu.be/JsZCxpHsoSs" target="_blank" rel="noopener"><strong>Open the video on YouTube →</strong></a>
         </p>
 
         <div class="callout">
-          This page intentionally stays at an architectural level and does not expose proprietary source code
-          or confidential implementation details from a previous employer.
+          <strong>Evidence boundary:</strong> I no longer have the project source code. Unlike my independent backend and C++
+          projects, this page therefore cannot link to implementation files. The architectural sections below describe systems
+          I worked on professionally and intentionally stay at a level that does not expose former-employer source code or
+          proprietary implementation details.
+        </div>
+
+        <h2>Role and engineering scope</h2>
+        <p>
+          I worked on the project as a Senior Software Engineer, primarily around server-authoritative multiplayer systems rather
+          than presentation-only gameplay code. The main areas I worked on were spatial interest management, authoritative player
+          movement, prediction/reconciliation, combat and spawning, shared world state, and networking infrastructure around
+          Mirror and the project's UDP transport.
+        </p>
+
+        <div class="architecture">Multiplayer systems I worked on
+│
+├── Server-authoritative world state
+│
+├── Spatial replication
+│   └── custom grid-based AOI integrated with Mirror
+│
+├── Player movement
+│   ├── client-side prediction
+│   ├── server authority
+│   └── reconciliation / correction
+│
+├── Gameplay state
+│   ├── player spawning
+│   ├── combat
+│   └── shared world state
+│
+└── Networking
+    ├── Mirror
+    └── modified UDP transport</div>
+
+        <h2>Deep dive: custom grid-based Area of Interest</h2>
+        <h3>The problem</h3>
+        <p>
+          In a larger multiplayer world, sending every networked entity to every connected player does unnecessary work on both
+          the server and client. Replication needs a relevance rule: which entities should a particular observer know about now?
+        </p>
+
+        <h3>The approach</h3>
+        <p>
+          I implemented a custom grid-based AOI and integrated it with Mirror. World positions were spatially partitioned so the
+          server could derive a nearby/relevant entity set for each observer and use that set to control selective synchronization.
+        </p>
+
+        <div class="architecture">authoritative world state
+          │
+          ▼
+entity positions
+          │
+          ▼
+custom spatial grid
+          │
+          ├── observer location
+          └── nearby/relevant cells
+                    │
+                    ▼
+             relevant entities
+                    │
+                    ▼
+          Mirror visibility / interest
+                    │
+                    ▼
+          selective synchronization</div>
+
+        <p>
+          The important architectural distinction is that the spatial structure answers a replication question. The authoritative
+          world still owns the entity state; the AOI determines which subset is relevant to a given client.
+        </p>
+
+        <h3>Why a grid</h3>
+        <p>
+          The grid avoids repeatedly comparing every observer against every entity in the world. Instead, the server can reason
+          about spatial neighborhoods first and narrow the candidate set before replication work is performed.
+        </p>
+
+        <div class="architecture">naive relevance search
+observer × every entity in world
+
+versus
+
+grid relevance search
+observer position
+      ↓
+observer cell / neighborhood
+      ↓
+entities already partitioned into nearby cells
+      ↓
+replication candidates</div>
+
+        <p>
+          I am intentionally not publishing exact production constants, internal class names or former-employer code. The point
+          of this diagram is to document the architecture I worked on, not reconstruct the source repository from memory.
+        </p>
+
+        <h2>Deep dive: server-authoritative movement</h2>
+        <p>
+          Movement was designed around server authority: the client could provide responsive local feedback, but it was not the
+          final authority on world position. The server owned the accepted movement state and could correct the client's predicted
+          result.
+        </p>
+
+        <div class="architecture">local player input
+      │
+      ├──────────────────────► local prediction
+      │                            │
+      │                            ▼
+      │                     immediate response
+      │
+      └──► network command
+                │
+                ▼
+        authoritative server
+                │
+                ├── process movement
+                └── authoritative state
+                           │
+                           ▼
+                    client receives state
+                           │
+                           ▼
+                      reconciliation
+                           │
+                 ┌─────────┴─────────┐
+                 │                   │
+          prediction close      prediction differs
+                 │                   │
+              continue          correct / converge</div>
+
+        <h3>Why prediction was necessary</h3>
+        <p>
+          Waiting for a network round trip before showing local movement would make control feel delayed. Prediction lets the
+          client respond immediately while keeping the server authoritative. Reconciliation then deals with disagreement between
+          predicted local state and the server's accepted state.
+        </p>
+
+        <h3>Authority boundary</h3>
+        <div class="architecture">client side
+input
+prediction
+visual responsiveness
+
+server side
+authoritative position/state
+shared world consistency
+validation of accepted gameplay state
+
+reconciliation bridges the two</div>
+
+        <p>
+          This professional work is also the background for why my current C++ server project treats client intent, authoritative
+          simulation time and correction as separate concepts rather than trusting client-produced world results.
+        </p>
+
+        <h2>Combat, spawning and shared world state</h2>
+        <p>
+          My multiplayer work was not limited to movement and visibility. I also worked on server-side systems around player
+          spawning, combat and state shared between connected players. These systems needed to fit the same authority model:
+          important outcomes belonged to server-owned state rather than being accepted directly from one client.
+        </p>
+
+        <div class="architecture">client action / request
+        │
+        ▼
+server-owned multiplayer state
+        │
+        ├── player lifecycle / spawning
+        ├── movement state
+        ├── combat state
+        └── shared world state
+        │
+        ▼
+replication to relevant clients</div>
+
+        <p>
+          I do not have enough surviving project material to responsibly publish deeper implementation details for these systems.
+          I would rather state that limit clearly than invent source-level specifics that I can no longer verify.
+        </p>
+
+        <h2>Mirror integration and UDP transport work</h2>
+        <p>
+          The project used Mirror as the networking framework, with a UDP transport that was substantially modified for the
+          project's needs. My work therefore involved both higher-level multiplayer behavior and code closer to the transport
+          boundary.
+        </p>
+
+        <div class="architecture">gameplay systems
+      │
+      ▼
+server-authoritative multiplayer layer
+      │
+      ├── movement / reconciliation
+      ├── AOI / visibility
+      ├── combat / spawning
+      └── shared state
+      │
+      ▼
+Mirror
+      │
+      ▼
+modified UDP transport
+      │
+      ▼
+network</div>
+
+        <p>
+          I no longer have the transport source and therefore do not list low-level changes here as if they were publicly
+          verifiable. This page only claims the level of involvement I can stand behind from my professional work.
+        </p>
+
+        <h2>What can and cannot be independently inspected</h2>
+        <div class="architecture">Publicly inspectable
+├── project footage
+└── this high-level architecture account
+
+Not publicly inspectable
+├── former-employer source code
+├── exact AOI implementation
+├── movement/reconciliation source
+├── transport modifications
+└── combat / spawning implementation</div>
+
+        <p>
+          That means this case study serves a different purpose from my independent projects. The ASP.NET and C++ pages let an
+          engineer follow links directly into code. This page documents professional experience that I can explain technically
+          in an interview, with the surviving project footage providing context for the product itself.
+        </p>
+
+        <h2>How this experience connects to my current work</h2>
+        <p>
+          The architectural problems from this project are the same class of problems I am now rebuilding from lower-level
+          primitives in my independent C++ server: authority boundaries, stable world state, timing, correction, spatial
+          relevance and selective replication. The difference is that the independent project is public and inspectable, so I can
+          document the mechanisms there in substantially more implementation detail.
+        </p>
+
+        <div class="actions">
+          <a class="button" href="https://youtu.be/JsZCxpHsoSs" target="_blank" rel="noopener">Watch project footage</a>
+          <a class="button secondary" href="/projects/game-server.html">See current C++ server work</a>
         </div>
       </article>
 
       <aside class="sidebar">
         <dl>
+          <dt>Type</dt><dd>Professional project</dd>
           <dt>Role</dt><dd>Senior Software Engineer</dd>
           <dt>Language</dt><dd>C#</dd>
           <dt>Engine</dt><dd>Unity</dd>
-          <dt>Networking</dt><dd>Mirror · modified UDP transport</dd>
-          <dt>Systems</dt><dd>AOI · movement · prediction · reconciliation · combat</dd>
+          <dt>Framework</dt><dd>Mirror</dd>
+          <dt>Transport</dt><dd>modified UDP transport</dd>
+          <dt>Multiplayer</dt><dd>server authoritative</dd>
+          <dt>Spatial</dt><dd>custom grid-based AOI</dd>
+          <dt>Movement</dt><dd>prediction · reconciliation</dd>
+          <dt>Gameplay</dt><dd>combat · spawning · shared world state</dd>
+          <dt>Public code</dt><dd>Not available</dd>
+          <dt>Public artifact</dt><dd><a href="https://youtu.be/JsZCxpHsoSs" target="_blank" rel="noopener">Project footage →</a></dd>
         </dl>
       </aside>
     </div>
   </section>
 </main>
+
 <footer class="footer">
   <div class="container footer-row">
     <span>Setthakritti Duangjamsai · Bangkok, Thailand</span>
