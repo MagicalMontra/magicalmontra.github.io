@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Setthakritti Duangjamsai · Software Engineer</title>
+  <meta name="description" content="Software engineer focused on C#/.NET backend, real-time systems, multiplayer networking, and Linux C++ systems engineering.">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="container nav">
+    <a class="brand" href="/index.html">Setthakritti Duangjamsai</a>
+    <nav class="nav-links" aria-label="Primary">
+      <a href="/index.html#projects">Projects</a>
+      <a href="/index.html#experience">Experience</a>
+      <a href="/resume/Setthakritti_Duangjamsai_Resume.pdf">Resume</a>
+      <a href="https://github.com/MagicalMontra">GitHub</a>
+      <a href="https://www.linkedin.com/in/setthakritti-duangjamsai-0205b9189/">LinkedIn</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <section class="hero">
+    <div class="container">
+      <p class="eyebrow">Software Engineer · Bangkok, Thailand</p>
+      <h1>C#/.NET, backend and real-time systems.</h1>
+      <p class="lead">
+        I have 7+ years of professional software-engineering experience, primarily in C# and real-time applications.
+        My background includes server-authoritative multiplayer, networking, software architecture, CI/CD,
+        debugging and performance optimization. I am currently extending that work into ASP.NET Core backend
+        engineering and lower-level Linux/C++ systems programming.
+      </p>
+      <div class="hero-actions">
+        <a class="button" href="#projects">View featured work</a>
+        <a class="button secondary" href="/resume/Setthakritti_Duangjamsai_Resume.pdf">Resume</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="projects">
+    <div class="container">
+      <p class="eyebrow">Featured engineering</p>
+      <h2>Projects and multiplayer systems</h2>
+      <p class="section-intro">
+        These case studies focus on the engineering decisions behind the work: state ownership,
+        networking, persistence, rollback, spatial replication and deployment.
+      </p>
+
+      <div class="cards">
+        <article class="card">
+          <p class="eyebrow">Independent project</p>
+          <h3>Multiplayer Backend</h3>
+          <div class="tags">
+            <span class="tag">C#</span>
+            <span class="tag">ASP.NET Core</span>
+            <span class="tag">PostgreSQL</span>
+            <span class="tag">Redis</span>
+          </div>
+          <p>
+            Backend service built around ASP.NET Core, EF Core/PostgreSQL, JWT authentication,
+            Redis and containerized integration testing. Includes a Redis/Lua login queue.
+          </p>
+          <a class="card-link" href="/projects/backend.html">Read case study →</a>
+        </article>
+
+        <article class="card">
+          <p class="eyebrow">Independent project</p>
+          <h3>Authoritative Game Server</h3>
+          <div class="tags">
+            <span class="tag">C++20</span>
+            <span class="tag">Linux</span>
+            <span class="tag">epoll</span>
+            <span class="tag">Rollback</span>
+          </div>
+          <p>
+            Linux multiplayer server built to expose the networking and simulation machinery normally
+            hidden by game-networking frameworks: non-blocking I/O, explicit framing, authoritative time,
+            rollback and spatial interest management.
+          </p>
+          <a class="card-link" href="/projects/game-server.html">Read case study →</a>
+        </article>
+
+        <article class="card">
+          <p class="eyebrow">Professional work</p>
+          <h3>Playbux Multiplayer Systems</h3>
+          <div class="tags">
+            <span class="tag">C#</span>
+            <span class="tag">Unity</span>
+            <span class="tag">Mirror</span>
+            <span class="tag">UDP</span>
+          </div>
+          <p>
+            Server-authoritative MMO-oriented gameplay work including a custom grid-based AOI,
+            client prediction/server reconciliation, spawning, combat and shared world state.
+          </p>
+          <a class="card-link" href="/projects/playbux.html">Read case study →</a>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="experience">
+    <div class="container">
+      <p class="eyebrow">Professional experience</p>
+      <h2>Selected engineering work</h2>
+
+      <div class="work-list">
+        <article class="work-item">
+          <h3>Iconix One · Game Software Engineer</h3>
+          <div class="work-meta">Jun 2026 – Aug 2026 · Bangkok, Thailand</div>
+          <p>
+            Web-game development using Cocos Creator, with MVC/state-machine application structure,
+            code reviews and architecture decisions.
+          </p>
+        </article>
+
+        <article class="work-item">
+          <h3>Playbux · Senior Software Engineer</h3>
+          <div class="work-meta">Jun 2024 – Aug 2024 · Bangkok, Thailand</div>
+          <p>
+            Owned server-authoritative gameplay work for an MMO-oriented multiplayer project using C# and Unity,
+            including AOI, movement prediction/reconciliation, combat, spawning and shared world-state systems.
+          </p>
+        </article>
+
+        <article class="work-item">
+          <h3>HotPlay · Mid-Level Software Engineer</h3>
+          <div class="work-meta">Jan 2023 – Apr 2024 · Bangkok, Thailand</div>
+          <p>
+            Gameplay and reusable systems, SOLID/DI architecture, an interface-based object-pooling system,
+            target-platform profiling, and a Jenkins build/deployment pipeline for Unity projects.
+          </p>
+        </article>
+
+        <article class="work-item">
+          <h3>Gamespace · Game Developer</h3>
+          <div class="work-meta">May 2019 – Dec 2022 · Bangkok, Thailand</div>
+          <p>
+            Built reusable C# systems including UI animation, third-person movement/camera, runtime save/load,
+            reflection-driven UI generation and additional gameplay/procedural systems.
+          </p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <p class="eyebrow">Contact</p>
+      <h2>Links</h2>
+      <p class="section-intro">
+        Source repositories will be linked directly from each project as they are prepared for public release.
+      </p>
+      <div class="actions">
+        <a class="button" href="https://github.com/MagicalMontra">GitHub profile</a>
+        <a class="button secondary" href="https://www.linkedin.com/in/setthakritti-duangjamsai-0205b9189/">LinkedIn</a>
+        <a class="button secondary" href="mailto:setthakritti@gmail.com">Email</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <div class="container footer-row">
+    <span>Setthakritti Duangjamsai · Bangkok, Thailand</span>
+    <span>
+      <a href="mailto:setthakritti@gmail.com">Email</a> ·
+      <a href="https://github.com/MagicalMontra">GitHub</a> ·
+      <a href="https://www.linkedin.com/in/setthakritti-duangjamsai-0205b9189/">LinkedIn</a>
+    </span>
+  </div>
+</footer>
+</body>
+</html>

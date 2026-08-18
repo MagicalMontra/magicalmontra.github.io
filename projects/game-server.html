@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Authoritative Game Server · Setthakritti Duangjamsai</title>
+  <meta name="description" content="C++20 Linux authoritative multiplayer server with epoll, rollback, sub-tick events, chunked AOI and interest tracking.">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="container nav">
+    <a class="brand" href="/index.html">Setthakritti Duangjamsai</a>
+    <nav class="nav-links" aria-label="Primary">
+      <a href="/index.html#projects">Projects</a>
+      <a href="/index.html#experience">Experience</a>
+      <a href="/resume/Setthakritti_Duangjamsai_Resume.pdf">Resume</a>
+      <a href="https://github.com/MagicalMontra">GitHub</a>
+      <a href="https://www.linkedin.com/in/setthakritti-duangjamsai-0205b9189/">LinkedIn</a>
+    </nav>
+  </div>
+</header>
+<main>
+  <section class="detail-hero">
+    <div class="container">
+      <p class="eyebrow">Independent systems project</p>
+      <h1>Authoritative Game Server</h1>
+      <p class="lead">
+        A Linux/C++20 multiplayer-server project built to understand the lower-level networking and simulation mechanisms
+        normally hidden behind game networking frameworks.
+      </p>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container content-grid">
+      <article class="prose">
+        <h2>Current architecture</h2>
+        <div class="architecture">Linux GameServer
+│
+├── non-blocking TCP
+├── epoll
+├── timerfd
+├── framed protocol
+│
+├── WorldSimulation
+│   ├── authoritative GameTime
+│   ├── replayable SimulationEvent timeline
+│   ├── bounded StateHistory
+│   └── rollback / resimulation
+│
+├── SpatialGrid
+│   ├── sparse chunks
+│   └── dense 1D cell indexing
+│
+└── InterestTracker
+    ├── entered
+    ├── stayed
+    └── left</div>
+
+        <h2>Why client and server ticks do not match</h2>
+        <p>
+          The server deliberately experiments with a relatively low authoritative simulation rate while allowing a client
+          to predict at a higher rate. Commands are positioned on a shared authoritative game-time timeline rather than
+          requiring client tick N to correspond to server tick N.
+        </p>
+
+        <h2>Sub-tick events and rollback</h2>
+        <p>
+          A command may belong partway through a coarse server step. The simulation can integrate the previous control state
+          up to the event time, apply the event, then simulate the remainder. Late events restore a historical world state and
+          replay the stored event/step history back to the present.
+        </p>
+
+        <h2>Three kinds of state</h2>
+        <div class="architecture">Authoritative
+WorldState
+  └── restored during rollback
+
+Derived
+SpatialGrid
+  └── rebuilt from WorldState when needed
+
+Replication
+InterestTracker
+  └── what the remote client currently knows
+  └── never rewound with simulation rollback</div>
+
+        <h2>Spatial representation</h2>
+        <p>
+          The world uses sparse chunks so an entire theoretical map is not allocated. Inside each loaded chunk,
+          local cells are stored as one contiguous 1D array using <code>index = y * width + x</code>.
+          Negative world coordinates are handled explicitly with floor division and positive modulo.
+        </p>
+
+        <div class="callout">
+          <strong>Next vertical-slice milestone:</strong> replication snapshots, actual client-to-entity ownership,
+          movement packets and real late-network-input rollback. UDP comes after that rather than blocking the portfolio release.
+        </div>
+      </article>
+
+      <aside class="sidebar">
+        <dl>
+          <dt>Language</dt><dd>C++20</dd>
+          <dt>Platform</dt><dd>Linux</dd>
+          <dt>I/O</dt><dd>non-blocking sockets · epoll</dd>
+          <dt>Timing</dt><dd>timerfd · GameTime</dd>
+          <dt>Simulation</dt><dd>rollback · resimulation</dd>
+          <dt>Spatial</dt><dd>chunks · 1D cells · AOI</dd>
+        </dl>
+      </aside>
+    </div>
+  </section>
+</main>
+<footer class="footer">
+  <div class="container footer-row">
+    <span>Setthakritti Duangjamsai · Bangkok, Thailand</span>
+    <span>
+      <a href="mailto:setthakritti@gmail.com">Email</a> ·
+      <a href="https://github.com/MagicalMontra">GitHub</a> ·
+      <a href="https://www.linkedin.com/in/setthakritti-duangjamsai-0205b9189/">LinkedIn</a>
+    </span>
+  </div>
+</footer>
+</body>
+</html>

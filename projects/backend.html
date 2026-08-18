@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Multiplayer Backend · Setthakritti Duangjamsai</title>
+  <meta name="description" content="ASP.NET Core backend case study using PostgreSQL, Redis, JWT, Docker and Testcontainers.">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="container nav">
+    <a class="brand" href="/index.html">Setthakritti Duangjamsai</a>
+    <nav class="nav-links" aria-label="Primary">
+      <a href="/index.html#projects">Projects</a>
+      <a href="/index.html#experience">Experience</a>
+      <a href="/resume/Setthakritti_Duangjamsai_Resume.pdf">Resume</a>
+      <a href="https://github.com/MagicalMontra">GitHub</a>
+      <a href="https://www.linkedin.com/in/setthakritti-duangjamsai-0205b9189/">LinkedIn</a>
+    </nav>
+  </div>
+</header>
+<main>
+  <section class="detail-hero">
+    <div class="container">
+      <p class="eyebrow">Independent engineering project</p>
+      <h1>Multiplayer Backend</h1>
+      <p class="lead">
+        An ASP.NET Core backend project used to deepen my production-oriented backend skills beyond real-time game-server code.
+      </p>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container content-grid">
+      <article class="prose">
+        <h2>What it demonstrates</h2>
+        <p>
+          The project focuses on practical backend concerns rather than a minimal CRUD API:
+          persistence, authentication, shared queue state, infrastructure health and integration tests against real services.
+        </p>
+
+        <div class="architecture">Client
+  │
+  ▼
+ASP.NET Core API
+  │
+  ├── Authentication / JWT
+  │
+  ├── Application services
+  │
+  ├── EF Core ─────────────► PostgreSQL
+  │
+  └── Redis client ────────► Redis
+                               │
+                               └── Lua queue operations</div>
+
+        <h2>Redis-backed login queue</h2>
+        <p>
+          Queue state is stored in Redis instead of process memory so it can be shared by more than one backend instance.
+          Lua is used for multi-step queue operations that need to execute atomically inside Redis.
+        </p>
+
+        <h2>Persistence and authentication</h2>
+        <p>
+          PostgreSQL and Entity Framework Core provide relational persistence. JWT authentication keeps API identity handling
+          explicit and gives the project a realistic request/authentication path to test.
+        </p>
+
+        <h2>Integration testing</h2>
+        <p>
+          Testcontainers is used so integration tests exercise real infrastructure in disposable containers rather than relying
+          entirely on mocked persistence. This makes failures around configuration, serialization and database behavior visible.
+        </p>
+
+        <div class="callout">
+          <strong>Current portfolio goal:</strong> demonstrate that my C# experience extends beyond Unity application code
+          into ordinary backend architecture, persistence, authentication and infrastructure.
+        </div>
+      </article>
+
+      <aside class="sidebar">
+        <dl>
+          <dt>Language</dt><dd>C#</dd>
+          <dt>Backend</dt><dd>ASP.NET Core</dd>
+          <dt>Persistence</dt><dd>EF Core · PostgreSQL</dd>
+          <dt>Shared state</dt><dd>Redis · Lua</dd>
+          <dt>Testing</dt><dd>Testcontainers</dd>
+          <dt>Infrastructure</dt><dd>Docker Compose · health checks</dd>
+        </dl>
+      </aside>
+    </div>
+  </section>
+</main>
+<footer class="footer">
+  <div class="container footer-row">
+    <span>Setthakritti Duangjamsai · Bangkok, Thailand</span>
+    <span>
+      <a href="mailto:setthakritti@gmail.com">Email</a> ·
+      <a href="https://github.com/MagicalMontra">GitHub</a> ·
+      <a href="https://www.linkedin.com/in/setthakritti-duangjamsai-0205b9189/">LinkedIn</a>
+    </span>
+  </div>
+</footer>
+</body>
+</html>

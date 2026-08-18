@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Playbux Multiplayer Systems · Setthakritti Duangjamsai</title>
+  <meta name="description" content="Professional server-authoritative multiplayer engineering work: AOI, prediction/reconciliation, combat and shared world state.">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="container nav">
+    <a class="brand" href="/index.html">Setthakritti Duangjamsai</a>
+    <nav class="nav-links" aria-label="Primary">
+      <a href="/index.html#projects">Projects</a>
+      <a href="/index.html#experience">Experience</a>
+      <a href="/resume/Setthakritti_Duangjamsai_Resume.pdf">Resume</a>
+      <a href="https://github.com/MagicalMontra">GitHub</a>
+      <a href="https://www.linkedin.com/in/setthakritti-duangjamsai-0205b9189/">LinkedIn</a>
+    </nav>
+  </div>
+</header>
+<main>
+  <section class="detail-hero">
+    <div class="container">
+      <p class="eyebrow">Professional multiplayer work</p>
+      <h1>Playbux Multiplayer Systems</h1>
+      <p class="lead">
+        Server-authoritative multiplayer engineering for an MMO-oriented Unity project using C#, Mirror
+        and a heavily modified UDP transport layer.
+      </p>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container content-grid">
+      <article class="prose">
+        <h2>Role</h2>
+        <p>
+          As a Senior Software Engineer, I owned implementation work across server-authoritative gameplay systems
+          and multiplayer state management.
+        </p>
+
+        <h2>Area of Interest</h2>
+        <p>
+          I designed and implemented a custom grid-based Area of Interest system integrated with Mirror.
+          The server spatially partitioned the world, determined player visibility and selectively synchronized
+          only the relevant network state to each client.
+        </p>
+
+        <div class="architecture">World state
+   │
+   ▼
+Spatial grid
+   │
+   ▼
+Nearby / relevant entities
+   │
+   ▼
+Per-client visibility
+   │
+   ▼
+Selective network replication</div>
+
+        <h2>Authoritative movement</h2>
+        <p>
+          Player movement remained server-authoritative while the client predicted local movement for responsiveness.
+          Authoritative server state was used for reconciliation and correction.
+        </p>
+
+        <h2>Other server-side systems</h2>
+        <p>
+          The multiplayer work also included player spawning, combat and shared world-state systems.
+          The implementation sat on top of Mirror and a substantially modified UDP transport layer.
+        </p>
+
+        <div class="callout">
+          This page intentionally stays at an architectural level and does not expose proprietary source code
+          or confidential implementation details from a previous employer.
+        </div>
+      </article>
+
+      <aside class="sidebar">
+        <dl>
+          <dt>Role</dt><dd>Senior Software Engineer</dd>
+          <dt>Language</dt><dd>C#</dd>
+          <dt>Engine</dt><dd>Unity</dd>
+          <dt>Networking</dt><dd>Mirror · modified UDP transport</dd>
+          <dt>Systems</dt><dd>AOI · movement · prediction · reconciliation · combat</dd>
+        </dl>
+      </aside>
+    </div>
+  </section>
+</main>
+<footer class="footer">
+  <div class="container footer-row">
+    <span>Setthakritti Duangjamsai · Bangkok, Thailand</span>
+    <span>
+      <a href="mailto:setthakritti@gmail.com">Email</a> ·
+      <a href="https://github.com/MagicalMontra">GitHub</a> ·
+      <a href="https://www.linkedin.com/in/setthakritti-duangjamsai-0205b9189/">LinkedIn</a>
+    </span>
+  </div>
+</footer>
+</body>
+</html>
