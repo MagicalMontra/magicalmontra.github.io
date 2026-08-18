@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Authoritative Game Server · Setthakritti Duangjamsai</title>
-  <meta name="description" content="C++20 Linux authoritative multiplayer server with epoll, rollback, sub-tick events, chunked AOI and interest tracking.">
+  <meta name="description" content="C++20/Linux authoritative multiplayer server case study covering non-blocking TCP, epoll, timerfd, authoritative GameTime, rollback, sparse chunked AOI and interest tracking.">
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
@@ -20,98 +20,638 @@
     </nav>
   </div>
 </header>
+
 <main>
   <section class="detail-hero">
     <div class="container">
-      <p class="eyebrow">Independent systems project</p>
+      <p class="eyebrow">Independent systems project · Work in progress</p>
       <h1>Authoritative Game Server</h1>
       <p class="lead">
-        A Linux/C++20 multiplayer-server project built to understand the lower-level networking and simulation mechanisms
-        normally hidden behind game networking frameworks.
+        A Linux/C++20 multiplayer-server project built to expose the networking and simulation mechanisms that higher-level
+        game networking frameworks normally hide: file-descriptor ownership, non-blocking I/O, stream framing, authoritative
+        time, sub-tick events, rollback/resimulation, stable entity identity, sparse spatial indexing and replication interest.
       </p>
+      <div class="actions">
+        <a class="button" href="https://github.com/MagicalMontra/MultiplayerBackend/tree/main/MultiplayerBackend.GameServer" target="_blank" rel="noopener">View source on GitHub</a>
+        <a class="button secondary" href="https://github.com/MagicalMontra/MultiplayerBackend/blob/main/MultiplayerBackend.GameServer/docs/ARCHITECTURE.md" target="_blank" rel="noopener">Architecture notes</a>
+      </div>
     </div>
   </section>
 
   <section class="section">
     <div class="container content-grid">
       <article class="prose">
-        <h2>Current architecture</h2>
+        <h2>What works now</h2>
+        <p>
+          This is not presented as a finished production server. The current repository has a working systems foundation and
+          simulation prototype, with temporary in-process demonstrations for rollback and interest behavior while the real
+          connection-to-entity and movement-packet path is still being built.
+        </p>
+
+        <ul>
+          <li>Linux TCP listener with non-blocking client sockets.</li>
+          <li>Level-triggered <code>epoll</code> event loop.</li>
+          <li><code>timerfd</code> integrated into the same event loop for authoritative simulation ticks.</li>
+          <li>RAII ownership of Linux file descriptors through a move-only <code>UniqueFd</code>.</li>
+          <li>Explicit TCP packet framing and a stream decoder that handles partial frames.</li>
+          <li>Per-client buffered writes with partial-send / <code>EAGAIN</code> handling.</li>
+          <li>Authoritative <code>GameTime</code> independent from tick identity.</li>
+          <li>Sub-tick simulation events and bounded rollback/resimulation history.</li>
+          <li>Replayable movement, spawn and despawn events.</li>
+          <li>Stable <code>EntityId</code> identity with dense entity storage.</li>
+          <li>Sparse chunked spatial indexing with dense 1D cells inside each chunk.</li>
+          <li>Incremental AOI updates during normal simulation and full derived-index rebuild after rollback restore.</li>
+          <li>Per-observer interest diffing into <code>entered</code>, <code>stayed</code> and <code>left</code>.</li>
+        </ul>
+
+        <div class="callout">
+          <strong>Current boundary:</strong> rollback is demonstrated with replayable server-side events, but real network
+          movement commands and replication snapshots are the next vertical-slice milestone. UDP, clock synchronization and
+          client prediction/reconciliation come after that.
+        </div>
+
+        <h2>System architecture</h2>
         <div class="architecture">Linux GameServer
 │
-├── non-blocking TCP
-├── epoll
-├── timerfd
-├── framed protocol
+├── Networking
+│   ├── UniqueFd                      RAII descriptor ownership
+│   ├── TcpSocket                     non-blocking socket wrapper
+│   ├── epoll                         readiness/event multiplexing
+│   ├── timerfd                       authoritative tick wakeups
+│   └── ClientConnection
+│       ├── PacketDecoder
+│       └── pending send buffer
+│
+├── Protocol
+│   ├── Packet
+│   ├── PacketCodec
+│   └── PacketDecoder
 │
 ├── WorldSimulation
-│   ├── authoritative GameTime
-│   ├── replayable SimulationEvent timeline
-│   ├── bounded StateHistory
+│   ├── SimulationStep / GameTime
+│   ├── WorldState
+│   ├── EntityStore
+│   ├── SimulationEvent timeline
+│   ├── StateHistory&lt;WorldState&gt;
+│   ├── StateHistory&lt;SimulationStep&gt;
 │   └── rollback / resimulation
 │
 ├── SpatialGrid
-│   ├── sparse chunks
-│   └── dense 1D cell indexing
+│   ├── sparse global chunks
+│   ├── dense 16 × 16 local cells
+│   └── EntityId membership
 │
-└── InterestTracker
-    ├── entered
-    ├── stayed
-    └── left</div>
+└── Replication
+    └── InterestTracker
+        ├── entered
+        ├── stayed
+        └── left</div>
 
-        <h2>Why client and server ticks do not match</h2>
         <p>
-          The server deliberately experiments with a relatively low authoritative simulation rate while allowing a client
-          to predict at a higher rate. Commands are positioned on a shared authoritative game-time timeline rather than
-          requiring client tick N to correspond to server tick N.
+          <a href="https://github.com/MagicalMontra/MultiplayerBackend/blob/main/MultiplayerBackend.GameServer/docs/ARCHITECTURE.md" target="_blank" rel="noopener"><strong>Read the full architecture notes →</strong></a>
         </p>
 
-        <h2>Sub-tick events and rollback</h2>
+        <h2>Deep dive: Linux resource ownership</h2>
+        <h3>The problem</h3>
         <p>
-          A command may belong partway through a coarse server step. The simulation can integrate the previous control state
-          up to the event time, apply the event, then simulate the remainder. Late events restore a historical world state and
-          replay the stored event/step history back to the present.
+          Sockets, the epoll instance and the timerfd are all integer file descriptors. Raw integers do not express ownership,
+          and early returns or future exceptions make manual cleanup easy to get wrong.
         </p>
 
-        <h2>Three kinds of state</h2>
-        <div class="architecture">Authoritative
-WorldState
-  └── restored during rollback
-
-Derived
-SpatialGrid
-  └── rebuilt from WorldState when needed
-
-Replication
-InterestTracker
-  └── what the remote client currently knows
-  └── never rewound with simulation rollback</div>
-
-        <h2>Spatial representation</h2>
+        <h3>Move-only RAII</h3>
         <p>
-          The world uses sparse chunks so an entire theoretical map is not allocated. Inside each loaded chunk,
-          local cells are stored as one contiguous 1D array using <code>index = y * width + x</code>.
-          Negative world coordinates are handled explicitly with floor division and positive modulo.
+          <code>UniqueFd</code> is the ownership primitive. Copying is deleted so two objects cannot believe they own the same
+          descriptor. Moving transfers ownership, and destruction closes the descriptor.
         </p>
+
+        <div class="architecture">class UniqueFd
+{
+public:
+    explicit UniqueFd(int fd = -1) noexcept;
+    ~UniqueFd();
+
+    UniqueFd(const UniqueFd&) = delete;
+    UniqueFd&amp; operator=(const UniqueFd&amp;) = delete;
+
+    UniqueFd(UniqueFd&amp;&amp; other) noexcept;
+    UniqueFd&amp; operator=(UniqueFd&amp;&amp; other) noexcept;
+
+private:
+    int fd_;
+};</div>
+
+        <p>
+          <a href="https://github.com/MagicalMontra/MultiplayerBackend/blob/main/MultiplayerBackend.GameServer/src/net/UniqueFd.h" target="_blank" rel="noopener"><strong>View UniqueFd →</strong></a>
+        </p>
+
+        <h2>Deep dive: one event loop for networking and simulation</h2>
+        <p>
+          The server puts the listening socket, the simulation <code>timerfd</code> and connected clients into the same
+          level-triggered <code>epoll</code> loop. The outer thread blocks in <code>epoll_wait()</code> until one of those file
+          descriptors can make progress.
+        </p>
+
+        <div class="architecture">epoll_wait()
+     │
+     ├── listener readable ─────► accept pending clients
+     │
+     ├── timerfd readable ──────► advance authoritative simulation
+     │
+     └── client readiness
+             ├── EPOLLIN ───────► receive / decode packets
+             └── EPOLLOUT ──────► flush pending send bytes</div>
+
+        <p>
+          The tick source is a Linux <code>timerfd</code> using <code>CLOCK_MONOTONIC</code>. If the timer reports more than one
+          expiration, the current implementation advances one authoritative step per expiration. A catch-up cap/overload policy
+          is intentionally listed as follow-up work rather than hidden.
+        </p>
+
+        <p>
+          <a href="https://github.com/MagicalMontra/MultiplayerBackend/blob/main/MultiplayerBackend.GameServer/src/server/GameServer.cpp" target="_blank" rel="noopener"><strong>View the epoll/timerfd server loop →</strong></a>
+        </p>
+
+        <h2>Deep dive: non-blocking writes are stateful</h2>
+        <p>
+          A writable socket does not guarantee that the full logical message can be sent. <code>ClientConnection</code> therefore
+          owns a pending byte buffer and a send offset. It keeps calling <code>send()</code> while progress is possible, retains
+          unsent bytes on <code>EAGAIN</code>/<code>EWOULDBLOCK</code>, retries <code>EINTR</code>, and reports whether output is
+          complete or still pending.
+        </p>
+
+        <div class="architecture">while (send_offset_ &lt; send_buffer_.size())
+{
+    sent = socket_.Send(remaining);
+
+    sent &gt; 0
+        → advance offset
+
+    EAGAIN / EWOULDBLOCK
+        → keep remaining bytes for later EPOLLOUT
+
+    EINTR
+        → retry
+
+    other error
+        → fail connection
+}</div>
+
+        <p>
+          <a href="https://github.com/MagicalMontra/MultiplayerBackend/blob/main/MultiplayerBackend.GameServer/src/server/ClientConnection.cpp" target="_blank" rel="noopener"><strong>View buffered partial-write handling →</strong></a>
+        </p>
+
+        <h2>Deep dive: TCP is a byte stream, not a packet transport</h2>
+        <p>
+          One <code>recv()</code> call is not assumed to correspond to one application packet. The wire format has an explicit
+          six-byte header and the decoder accumulates arbitrary stream fragments until a complete frame exists.
+        </p>
+
+        <div class="architecture">wire frame
+
+[ uint32 payload_size ][ uint16 packet_type ][ payload ]
+        4 bytes                 2 bytes
+
+TCP may deliver:
+
+recv #1  [header part]
+recv #2  [rest header + payload part]
+recv #3  [rest payload + next packet]
+
+PacketDecoder retains bytes until an entire frame is available.</div>
+
+        <p>
+          The decoder converts header fields from network byte order, rejects payload sizes above its configured maximum,
+          advances a read offset without erasing the vector after every packet, and compacts consumed space only when useful.
+        </p>
+
+        <p>
+          <a href="https://github.com/MagicalMontra/MultiplayerBackend/blob/main/MultiplayerBackend.GameServer/src/protocol/PacketDecoder.cpp" target="_blank" rel="noopener"><strong>View PacketDecoder →</strong></a><br>
+          <a href="https://github.com/MagicalMontra/MultiplayerBackend/blob/main/MultiplayerBackend.GameServer/src/protocol/PacketCodec.cpp" target="_blank" rel="noopener"><strong>View PacketCodec →</strong></a>
+        </p>
+
+        <h2>Authoritative time is not the same thing as tick identity</h2>
+        <p>
+          The current experiment deliberately runs the authoritative server at 12 Hz. The design does not require a future
+          client prediction step to map 1:1 to a server tick. Instead, events are placed on an authoritative simulation-time
+          axis represented by <code>std::chrono::nanoseconds</code>.
+        </p>
+
+        <div class="architecture">using GameTime = std::chrono::nanoseconds;
+
+struct SimulationStep
+{
+    std::uint64_t tick;
+    GameTime start_time;
+    GameTime end_time;
+    GameTime delta_time;
+};</div>
+
+        <p>
+          This distinction matters at rates such as 12 Hz: one ideal step is 83.333… ms, which cannot be represented exactly as
+          an integer number of nanoseconds. The timer interval itself is necessarily truncated, but the authoritative game-time
+          boundary is derived from the absolute tick index rather than repeatedly adding that truncated period.
+        </p>
+
+        <div class="architecture">whole_seconds = tick / tick_rate
+remainder_ticks = tick % tick_rate
+
+remainder_nanoseconds =
+    remainder_ticks * 1,000,000,000 / tick_rate
+
+GameTime = whole_seconds + remainder_nanoseconds
+
+At 12 Hz:
+Tick 12 → exactly 1.000000000 s on authoritative GameTime</div>
+
+        <p>
+          <a href="https://github.com/MagicalMontra/MultiplayerBackend/blob/main/MultiplayerBackend.GameServer/src/simulation/SimulationStep.h" target="_blank" rel="noopener"><strong>View SimulationStep / GameTime →</strong></a><br>
+          <a href="https://github.com/MagicalMontra/MultiplayerBackend/blob/main/MultiplayerBackend.GameServer/src/server/GameServer.cpp" target="_blank" rel="noopener"><strong>View TimeAtTick / simulation clock →</strong></a>
+        </p>
+
+        <h2>Sub-tick events</h2>
+        <p>
+          A 12 Hz outer simulation loop does not force all gameplay input to 83 ms timing buckets. Each simulation step covers
+          <code>[start_time, end_time)</code>, and the simulation can split that interval around an event timestamp.
+        </p>
+
+        <div class="architecture">Server step
+1.500 s -------------------------------- 1.583 s
+                    ↑
+                  1.550 s
+               movement event
+
+simulate old state:   1.500 → 1.550
+apply event:                  @ 1.550
+simulate new state:           1.550 → 1.583</div>
+
+        <p>
+          <code>WorldSimulation::SimulateStep</code> walks events in chronological order, integrates up to each exact event time,
+          applies the event, then continues through the remainder of the server step.
+        </p>
+
+        <p>
+          <a href="https://github.com/MagicalMontra/MultiplayerBackend/blob/main/MultiplayerBackend.GameServer/src/simulation/WorldSimulation.cpp" target="_blank" rel="noopener"><strong>View sub-tick simulation →</strong></a>
+        </p>
+
+        <h2>Deep dive: bounded rollback and deterministic replay</h2>
+        <h3>Historical state</h3>
+        <p>
+          <code>StateHistory&lt;T, Capacity&gt;</code> is a fixed-size ring. The physical slot comes from <code>tick % Capacity</code>,
+          but every stored entry also records the logical tick. That extra check prevents an overwritten slot from being mistaken
+          for the requested historical state.
+        </p>
+
+        <div class="architecture">index = tick % Capacity
+
+slot contains:
+    stored tick
+    stored state
+
+Find(requested_tick):
+    slot empty              → not available
+    stored tick != request  → overwritten / stale
+    otherwise               → valid historical state</div>
+
+        <p>
+          <a href="https://github.com/MagicalMontra/MultiplayerBackend/blob/main/MultiplayerBackend.GameServer/src/simulation/StateHistory.h" target="_blank" rel="noopener"><strong>View StateHistory →</strong></a>
+        </p>
+
+        <h3>Replayable event timeline</h3>
+        <p>
+          Rollback is not movement-only. The canonical event timeline uses a <code>std::variant</code> payload for movement,
+          player spawn and entity despawn. Events carry both <code>GameTime</code> and a stable order value, so events sharing the
+          same timestamp still have deterministic ordering.
+        </p>
+
+        <div class="architecture">SimulationEvent
+├── GameTime time
+├── uint64 order
+└── variant payload
+    ├── MovementInput
+    ├── SpawnPlayerEvent
+    └── DespawnEntityEvent</div>
+
+        <h3>Rollback procedure</h3>
+        <div class="architecture">late event arrives
+      │
+      ▼
+find historical step containing event time
+      │
+      ▼
+restore state before that step
+      │
+      ▼
+rebuild derived SpatialGrid
+      │
+      ▼
+replay exact historical SimulationSteps + events
+      │
+      ▼
+overwrite stale history with corrected states
+      │
+      ▼
+corrected present</div>
+
+        <p>
+          The repository currently demonstrates this with a deliberately late movement event. Player 1 initially moves forward.
+          At server time 2.0 s, the simulation inserts a <code>Backward</code> event whose authoritative time is 1.55 s. The
+          simulation restores the historical state, replays the interval around 1.55 s, and corrects the present position.
+        </p>
+
+        <div class="architecture">before correction @ 2.000 s
+x ≈ 2.0
+
+late event says:
+Backward @ 1.550 s
+
+restore @ 1.500 s
+x = 1.5, Forward
+
+Forward  1.500 → 1.550
+Backward 1.550 → 2.000
+
+corrected present
+x ≈ 1.1</div>
+
+        <p>
+          A second demonstration inserts a player-spawn event late, showing why entity lifecycle itself must be replayable rather
+          than treated as an irreversible side effect outside the simulation timeline.
+        </p>
+
+        <p>
+          <a href="https://github.com/MagicalMontra/MultiplayerBackend/blob/main/MultiplayerBackend.GameServer/src/simulation/WorldSimulation.cpp" target="_blank" rel="noopener"><strong>View rollback/resimulation implementation →</strong></a><br>
+          <a href="https://github.com/MagicalMontra/MultiplayerBackend/blob/main/MultiplayerBackend.GameServer/src/server/GameServer.cpp" target="_blank" rel="noopener"><strong>View the current late-event demonstrations →</strong></a><br>
+          <a href="https://github.com/MagicalMontra/MultiplayerBackend/blob/main/MultiplayerBackend.GameServer/src/simulation/SimulationEvent.h" target="_blank" rel="noopener"><strong>View replayable event types →</strong></a>
+        </p>
+
+        <h2>Stable entity identity vs dense storage</h2>
+        <p>
+          The simulation does not use a vector index as long-lived entity identity. <code>EntityId</code> remains stable while
+          <code>EntityStore&lt;T&gt;</code> combines a dense <code>std::vector</code> for iteration with an ID-to-index hash map for
+          average O(1) lookup. Removal uses swap-and-pop and repairs the moved entity's mapping.
+        </p>
+
+        <div class="architecture">stable identity
+EntityId = 42
+      │
+      ▼
+unordered_map&lt;EntityId, index&gt;
+      │
+      ▼
+dense vector
+[ 7 ][ 42 ][ 19 ][ 88 ]
+
+remove 42:
+move last element into its slot
+repair 88 → new index
+pop_back()
+
+EntityId remains identity; vector index is only storage location.</div>
+
+        <p>
+          <a href="https://github.com/MagicalMontra/MultiplayerBackend/blob/main/MultiplayerBackend.GameServer/src/simulation/EntityStore.h" target="_blank" rel="noopener"><strong>View EntityStore →</strong></a>
+        </p>
+
+        <h2>Deep dive: sparse world, dense local spatial storage</h2>
+        <p>
+          The AOI grid is sparse at world scale but deliberately contiguous inside a loaded chunk. Global chunks live in an
+          <code>unordered_map</code>; each chunk contains a fixed 16 × 16 logical grid represented as 256 physical 1D entries.
+        </p>
+
+        <div class="architecture">global world
+unordered_map&lt;ChunkCoord, Chunk&gt;
+
+only populated chunks exist
+
+Chunk
+16 × 16 logical cells
+        │
+        ▼
+std::array&lt;vector&lt;EntityId&gt;, 256&gt;
+
+local flattening:
+index = y * 16 + x
+
+(0,0)   →   0
+(15,0)  →  15
+(0,1)   →  16
+(5,3)   →  53
+(15,15) → 255</div>
+
+        <h3>Negative coordinates are handled mathematically</h3>
+        <p>
+          C++ integer division truncates toward zero, which is wrong for chunk addressing on the negative side of the world.
+          The grid therefore uses explicit floor division and positive modulo.
+        </p>
+
+        <div class="architecture">global cell x = -17
+chunk width   = 16
+
+C++ -17 / 16       → -1   (truncates toward zero)
+required chunk     → -2
+required local x   → 15
+
+result:
+chunk -2, local cell 15</div>
+
+        <h3>Normal movement is incremental</h3>
+        <p>
+          A normal movement update first computes the new grid address. If the entity remains in the same cell, the membership
+          data is untouched. Crossing a cell boundary removes the ID from the old cell with swap-and-pop and inserts it into the
+          new one. Empty chunks are released.
+        </p>
+
+        <div class="architecture">entity moves
+   │
+   ▼
+compute new GridAddress
+   │
+   ├── same cell ─────────► no membership mutation
+   │
+   └── different cell
+           ├── swap-and-pop from old cell
+           ├── remove empty old chunk if necessary
+           └── push into new cell
+
+rollback restore is different:
+restore WorldState → rebuild SpatialGrid once → replay incrementally</div>
+
+        <p>
+          Neighborhood query results are sorted before leaving the spatial layer so internal hash-map/chunk iteration order does
+          not leak into externally visible replication ordering.
+        </p>
+
+        <p>
+          <a href="https://github.com/MagicalMontra/MultiplayerBackend/blob/main/MultiplayerBackend.GameServer/src/simulation/SpatialGrid.cpp" target="_blank" rel="noopener"><strong>View SpatialGrid implementation →</strong></a>
+        </p>
+
+        <h2>Three different kinds of state</h2>
+        <p>
+          One of the central architectural decisions is that not everything associated with the simulation belongs in a rollback
+          snapshot.
+        </p>
+
+        <div class="architecture">1. Authoritative simulation state
+   WorldState
+   → canonical game state
+   → saved and restored during rollback
+
+2. Derived simulation state
+   SpatialGrid
+   → reconstructed from WorldState
+   → rebuilt after historical restore
+
+3. Replication knowledge
+   InterestTracker
+   → what a remote observer is currently considered to know
+   → NOT rewound during simulation rollback</div>
+
+        <p>
+          Rewinding replication knowledge would imply that the server could unsend packets a client has already received. Instead,
+          rollback corrects the authoritative present, and the next replication diff tells the client how that corrected present
+          differs from what it currently knows.
+        </p>
+
+        <h2>Interest tracking: entered, stayed, left</h2>
+        <p>
+          <code>InterestTracker</code> receives the newly desired AOI set, sorts and deduplicates it, then performs a merge-style
+          single pass against the previous sorted set.
+        </p>
+
+        <div class="architecture">previous interest: [2, 4, 7]
+new desired:       [4, 7, 9]
+
+merge diff:
+2 → left
+4 → stayed
+7 → stayed
+9 → entered
+
+future replication mapping:
+entered → SpawnEntity
+stayed  → StateUpdate
+left    → DespawnEntity</div>
+
+        <p>
+          <a href="https://github.com/MagicalMontra/MultiplayerBackend/blob/main/MultiplayerBackend.GameServer/src/replication/InterestTracker.cpp" target="_blank" rel="noopener"><strong>View InterestTracker →</strong></a>
+        </p>
+
+        <h2>Authority model</h2>
+        <p>
+          The intended network contract is that clients send <strong>intent</strong>, not authoritative outcomes. A future movement
+          packet may describe direction plus sequence/timing metadata; it should not submit a trusted position, displacement,
+          movement speed or client-provided delta time. The server owns authoritative time and state transitions.
+        </p>
+
+        <div class="architecture">client may send
+Forward / Backward / Left / Right
+Attack / Dodge / Parry / Jump
+sequence + timing metadata
+
+client does NOT own
+authoritative position
+movement displacement
+server delta time
+damage / hit result
+parry result</div>
+
+        <h2>Why 12 Hz does not mean 83 ms input precision</h2>
+        <p>
+          The server rate is intentionally low as an experiment. That outer cadence controls how often the authoritative loop
+          advances, but event timestamps can still split a step internally. A future client may predict at 30/60 Hz while the
+          server stays at a lower rate; shared <code>GameTime</code> is the bridge rather than matching tick numbers.
+        </p>
+
+        <div class="architecture">possible cadence separation
+
+server simulation       12 Hz
+snapshot replication     6 Hz   (future independent cadence)
+client prediction       60 Hz   (future client)
+rendering          unrestricted
+
+These rates do not need to share tick identity.</div>
+
+        <h2>Build and run</h2>
+        <p>
+          The game-server target is Linux-specific and built with CMake/C++20. From the repository root on Linux or WSL:
+        </p>
+
+        <div class="architecture">cmake -S MultiplayerBackend.GameServer \
+      -B MultiplayerBackend.GameServer/build
+
+cmake --build MultiplayerBackend.GameServer/build
+
+./MultiplayerBackend.GameServer/build/multiplayer_game_server</div>
+
+        <p>
+          The current <code>main.cpp</code> starts the server on TCP port <code>7777</code> with a 12 Hz authoritative simulation
+          rate.
+        </p>
+
+        <p>
+          <a href="https://github.com/MagicalMontra/MultiplayerBackend/blob/main/MultiplayerBackend.GameServer/CMakeLists.txt" target="_blank" rel="noopener"><strong>View CMake target →</strong></a><br>
+          <a href="https://github.com/MagicalMontra/MultiplayerBackend/blob/main/MultiplayerBackend.GameServer/src/main.cpp" target="_blank" rel="noopener"><strong>View server entry point →</strong></a>
+        </p>
+
+        <h2>What is deliberately not claimed yet</h2>
+        <p>
+          The project page should make it possible to distinguish implemented systems from the roadmap. These are important
+          follow-ups, but they are not presented as completed features:
+        </p>
+
+        <ul>
+          <li><strong>ReplicationSnapshot</strong> data model and serialized spawn/update/despawn snapshots.</li>
+          <li>Real connection/session/player → controlled <code>EntityId</code> ownership.</li>
+          <li>Real movement commands arriving from a network client and triggering late-input rollback.</li>
+          <li>Independent replication cadence.</li>
+          <li>UDP path for latency-sensitive gameplay.</li>
+          <li>Client/server clock synchronization and timestamp validation.</li>
+          <li>Prediction/reconciliation on an actual client.</li>
+          <li>Rollback-sensitive Attack/Dodge/Parry combat.</li>
+          <li>Explicit <code>EPOLLERR</code>/<code>EPOLLHUP</code> policy and per-client pending-send limits.</li>
+          <li>A capped timer catch-up/overload policy.</li>
+        </ul>
 
         <div class="callout">
-          <strong>Next vertical-slice milestone:</strong> replication snapshots, actual client-to-entity ownership,
-          movement packets and real late-network-input rollback. UDP comes after that rather than blocking the portfolio release.
+          <strong>Next portfolio milestone:</strong> InterestDelta → ReplicationSnapshot, real connection-to-entity ownership,
+          movement command packets, then a real late network input that restores history, resimulates and produces a corrected
+          replicated present.
+        </div>
+
+        <h2>Scope</h2>
+        <p>
+          This is an independent systems-learning project, not a production server with live traffic. Its purpose is to make the
+          mechanisms explicit and inspectable rather than hiding them behind a networking framework. The repository and architecture
+          notes are public so the implementation, current limitations and design reasoning can be checked directly.
+        </p>
+
+        <div class="actions">
+          <a class="button" href="https://github.com/MagicalMontra/MultiplayerBackend/tree/main/MultiplayerBackend.GameServer" target="_blank" rel="noopener">Inspect the game-server source</a>
+          <a class="button secondary" href="https://github.com/MagicalMontra/MultiplayerBackend/blob/main/MultiplayerBackend.GameServer/docs/ARCHITECTURE.md" target="_blank" rel="noopener">Read architecture notes</a>
         </div>
       </article>
 
       <aside class="sidebar">
         <dl>
+          <dt>Status</dt><dd>Work in progress</dd>
           <dt>Language</dt><dd>C++20</dd>
-          <dt>Platform</dt><dd>Linux</dd>
-          <dt>I/O</dt><dd>non-blocking sockets · epoll</dd>
-          <dt>Timing</dt><dd>timerfd · GameTime</dd>
-          <dt>Simulation</dt><dd>rollback · resimulation</dd>
-          <dt>Spatial</dt><dd>chunks · 1D cells · AOI</dd>
+          <dt>Platform</dt><dd>Linux / WSL</dd>
+          <dt>Networking</dt><dd>non-blocking TCP · epoll</dd>
+          <dt>Timing</dt><dd>timerfd · authoritative GameTime</dd>
+          <dt>Protocol</dt><dd>explicit stream framing</dd>
+          <dt>Simulation</dt><dd>sub-tick events · rollback · resimulation</dd>
+          <dt>State</dt><dd>bounded history · replayable lifecycle</dd>
+          <dt>Spatial</dt><dd>sparse chunks · dense 1D cells</dd>
+          <dt>Replication</dt><dd>interest entered / stayed / left</dd>
+          <dt>Server rate</dt><dd>12 Hz current experiment</dd>
+          <dt>Source</dt><dd><a href="https://github.com/MagicalMontra/MultiplayerBackend/tree/main/MultiplayerBackend.GameServer" target="_blank" rel="noopener">GitHub source →</a></dd>
+          <dt>Design notes</dt><dd><a href="https://github.com/MagicalMontra/MultiplayerBackend/blob/main/MultiplayerBackend.GameServer/docs/ARCHITECTURE.md" target="_blank" rel="noopener">Architecture →</a></dd>
         </dl>
       </aside>
     </div>
   </section>
 </main>
+
 <footer class="footer">
   <div class="container footer-row">
     <span>Setthakritti Duangjamsai · Bangkok, Thailand</span>
