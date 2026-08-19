@@ -76,7 +76,7 @@ ASP.NET Core Minimal API
           <li>Account registration and login with password hashing and JWT bearer authentication.</li>
           <li>Authenticated <code>/me</code> endpoints that derive player identity from token claims.</li>
           <li>PostgreSQL persistence through Entity Framework Core.</li>
-          <li>Redis cache-aside reads for player state with a bounded TTL.</li>
+          <li>Redis cache-aside reads for player state with a bounded TTL and write-side invalidation after profile updates.</li>
           <li>A Redis sorted-set login queue with an atomic Lua join operation.</li>
           <li>Inventory stacking and player-to-player transfers.</li>
           <li>Optimistic inventory concurrency using an EF row-version property backed by PostgreSQL.</li>
@@ -237,10 +237,12 @@ Authorization: Bearer &lt;token&gt;
           <a href="https://github.com/MagicalMontra/MultiplayerBackend/blob/main/MultiplayerBackend.Api/Program.cs" target="_blank" rel="noopener"><strong>View JWT validation and DI configuration →</strong></a>
         </p>
 
-        <h2>Redis cache-aside player reads</h2>
+        <h2>Redis cache-aside player reads and invalidation</h2>
         <p>
           <code>GET /api/players/me</code> checks the distributed Redis cache first. A cache miss falls through to a projected
           PostgreSQL query, then stores the serialized response in Redis for five minutes before returning it.
+          After <code>PUT /api/players/me</code> successfully saves the updated player to PostgreSQL, the corresponding cache key
+          is removed so the next read reloads authoritative state instead of serving a stale profile for the remainder of the TTL.
         </p>
 
         <div class="architecture">GET /api/players/me
@@ -259,10 +261,28 @@ return     PostgreSQL
         cache for 5 min
               │
               ▼
-            return</div>
+            return
+
+PUT /api/players/me
+        │
+        ▼
+PostgreSQL update succeeds
+        │
+        ▼
+remove player:{id} from Redis
+        │
+        ▼
+next GET repopulates from PostgreSQL</div>
 
         <p>
-          <a href="https://github.com/MagicalMontra/MultiplayerBackend/blob/main/MultiplayerBackend.Api/Endpoints/PlayerEndpoints.cs" target="_blank" rel="noopener"><strong>View cache-aside implementation →</strong></a>
+          The cache behavior is integration tested by warming the cache with a GET, updating the profile through the authenticated
+          PUT endpoint, then reading the profile again and verifying that the updated values are returned rather than the previously
+          cached response.
+        </p>
+
+        <p>
+          <a href="https://github.com/MagicalMontra/MultiplayerBackend/blob/main/MultiplayerBackend.Api/Endpoints/PlayerEndpoints.cs" target="_blank" rel="noopener"><strong>View cache-aside and invalidation implementation →</strong></a><br>
+          <a href="https://github.com/MagicalMontra/MultiplayerBackend/blob/main/MultiplayerBackend.Api.Tests/PlayerCacheTests.cs" target="_blank" rel="noopener"><strong>View player-cache integration test →</strong></a>
         </p>
 
         <h2>Integration tests use real infrastructure</h2>
@@ -306,6 +326,11 @@ reset between tests
 ...
 
 await db.Database.MigrateAsync();</div>
+
+        <p>
+          Current coverage includes login-queue concurrency, inventory transfer behavior and authorization,
+          and player-cache invalidation after authenticated profile updates.
+        </p>
 
         <p>
           <a href="https://github.com/MagicalMontra/MultiplayerBackend/blob/main/MultiplayerBackend.Api.Tests/Infrastructure/ApiIntegrationTestFixture.cs" target="_blank" rel="noopener"><strong>View the Testcontainers/WebApplicationFactory fixture →</strong></a>
